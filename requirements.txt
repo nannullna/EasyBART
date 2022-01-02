@@ -1,0 +1,8 @@
+# dataset
+pyarrow
+pandas
+
+# model
+torch
+transformers
+wandb
