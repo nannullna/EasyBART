@@ -152,18 +152,15 @@ def main(args):
     model = BartSummaryModelV2.from_pretrained(args.model_dir)
     
     # get data
-    data_dir = os.path.join(args.data_dir, args.date)
+    OUTPUT_DIR = "./outputs"
+    save_file_name = "summary_output.json"
 
-    save_file_name = f"summary_{args.date}.json"
-    if os.path.isfile(os.path.join(data_dir, save_file_name)) and not args.overwrite:
-        print(f'{save_file_name} has been already generated.')
+    if os.path.isfile(os.path.join(OUTPUT_DIR, save_file_name)) and not args.overwrite:
+        print(f'{save_file_name} has already been generated.')
         return
-        
-    file_name = f"cluster_for_summary_{args.date}.json"
-    test_file = os.path.join(data_dir, file_name)
 
-    test_dataset = SummaryDataset(test_file, tokenizer)
-    
+    test_dataset = SummaryDataset(args.test_file_path, tokenizer)
+
     print(f"test dataset length: {len(test_dataset)}")
     
     test_dl = DataLoader(
@@ -179,7 +176,7 @@ def main(args):
     print("Inference completed!")
     test_id = test_dataset.get_id_column()
     
-    assert len(test_id) == len(pred_sents), "length of test_id and pred_sents do not match"
+    assert len(test_id) == len(pred_sents), "lengths of test_id and pred_sents do not match"
     
     test_title = test_dataset.get_title_column()
     test_category = test_dataset.get_category_column()
@@ -194,8 +191,10 @@ def main(args):
             "summary": pred_sents[i]
         })
 
-    # output.to_json('./summary.json')  # json 으로 저장
-    with open(os.path.join(data_dir, save_file_name), 'w', encoding="utf-8") as f:
+    if not os.path.isdir(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
+
+    with open(os.path.join(OUTPUT_DIR, save_file_name), 'w', encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=4)
 
 

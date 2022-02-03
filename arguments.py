@@ -30,8 +30,7 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
     parser.add_argument('--model_dir', type=str, default="./saved")
     parser.add_argument('--tokenizer', type=str, default="gogamza/kobart-summarization")
-    parser.add_argument('--data_dir', type=str, default="/opt/ml/dataset/Test")
-    parser.add_argument('--date', type=str, default=(date.today() - timedelta(1)).strftime("%Y%m%d")) # 어제날짜
+    parser.add_argument('--test_file_path', type=str, default="/opt/ml/dataset/Test")
     parser.add_argument('--overwrite', action='store_true')
 
     parser.add_argument("--no_cuda", action='store_true', help="run on cpu if True")
