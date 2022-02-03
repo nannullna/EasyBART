@@ -40,32 +40,6 @@ def get_top_k_sentences(logits: torch.FloatTensor, eos_positions: torch.LongTens
     return returned_tensor
 
 
-def concat_json(data_dir, date, overwrite: bool = False):
-    '''Combine files for each category into one whole json file'''
-    CATEGORIES = {"society", "politics", "economic", "foreign", "culture", "entertain", "sports", "digital"}
-    date_dir = os.path.join(data_dir, date)
-
-    # create list of files to concatenate
-    file_prefix = f"cluster_for_summary_{date}"
-    category_files = [f"{file_prefix}_{category}.json" for category in CATEGORIES]
-
-    save_file_name = f"{date_dir}/cluster_for_summary_{date}.json"
-    if os.path.isfile(save_file_name) and not overwrite:
-        print(f'{save_file_name} has been already generated.')
-        return
-
-    concatenated_data = [] 
-    for category_file in category_files:
-        all_files = os.listdir(date_dir)
-        if category_file in all_files:
-            with open(os.path.join(date_dir, category_file), "r") as f:
-                concatenated_data.extend(json.load(f))
-            
-    with open(save_file_name, "w") as f:
-        json.dump(concatenated_data, f, ensure_ascii=False, indent=4)
-    print("Concatenation Completed!")
-
-
 def extract_sentences(
     input_ids: torch.FloatTensor,
     eos_positions: torch.LongTensor,
@@ -233,5 +207,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    concat_json(args.data_dir, args.date, args.overwrite)
     main(args)
