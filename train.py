@@ -14,7 +14,7 @@ from transformers import BartTokenizerFast
 from transformers.models.bart.configuration_bart import BartConfig
 
 from arguments import add_train_args, add_predict_args, add_wandb_args
-from model import BartSummaryModelV2, BartSummaryModelV3
+from models import BartSummaryModelV2, BartSummaryModelV3
 from inference import predict
 from utils import set_all_seeds, collate_fn, freeze, unfreeze_all, np_sigmoid
 from dataset import SummaryDataset

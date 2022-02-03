@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from transformers import BartTokenizerFast, BartConfig
 
 from arguments import add_inference_args, add_predict_args
-from model import BartSummaryModelV2
+from models import BartSummaryModelV2
 from dataset import SummaryDataset
 from utils import collate_fn
 
