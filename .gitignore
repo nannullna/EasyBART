@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Mac files
+.DS_STORE
+
+# PyTorch saved model & data & log files
+saved/
+wandb/
+logs/
+outputs/
+*.bin
+*.bin.gz
+nohup.out
