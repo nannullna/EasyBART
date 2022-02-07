@@ -28,9 +28,10 @@ def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
 def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser():
 
-    parser.add_argument('--model_dir', type=str, default="./saved")
+    parser.add_argument('--model', type=str, default="./saved")
+    parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--tokenizer', type=str, default="gogamza/kobart-summarization")
-    parser.add_argument('--test_file_path', type=str, default="/opt/ml/dataset/Test")
+    parser.add_argument('--test_file_path', type=str, default="/opt/datasets/aihub_news_summ/Validation/valid.json")
     parser.add_argument('--overwrite', action='store_true')
 
     parser.add_argument("--no_cuda", action='store_true', help="run on cpu if True")
@@ -57,6 +58,6 @@ def add_wandb_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser()
     parser.add_argument("--use_wandb", action='store_true')
     parser.add_argument("--wandb_run_name", default="run", type=str, help="wandb run name")
     parser.add_argument("--wandb_project", default="easybart", type=str, help="wandb project name")
-    parser.add_argument("--wandb_entity", default="this-is-real", type=str, help="wandb entity name")
+    parser.add_argument("--wandb_entity", default="kkmjkim", type=str, help="wandb entity name")
 
     return parser
