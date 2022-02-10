@@ -156,7 +156,12 @@ def main(args):
     
     # get data
     OUTPUT_DIR = "./outputs"
-    save_file_name = "summary_output.json"
+
+    if args.save_json_name is not None:
+        assert args.save_json_name.split(".")[-1] == "json", "Saving file name must end with '.json'"
+        save_file_name = os.path.join(OUTPUT_DIR, args.save_json_name)
+    else:
+        save_file_name = "summary_output.json"
 
     if os.path.isfile(os.path.join(OUTPUT_DIR, save_file_name)) and not args.overwrite:
         print(f'{save_file_name} has already been generated.')
