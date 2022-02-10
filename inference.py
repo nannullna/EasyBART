@@ -97,13 +97,13 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                     eos_positions=batch["eos_positions"], 
                     k = args.top_k,
                 )
-                gen_batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
+                batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
 
             summary_ids = None
             if args.generate_method == "greedy":
                 summary_ids = model.generate(
-                    input_ids=gen_batch["input_ids"].to(device), 
-                    attention_mask=gen_batch["attention_mask"].to(device),  
+                    input_ids=batch["input_ids"].to(device), 
+                    attention_mask=batch["attention_mask"].to(device),  
                     max_length=args.max_length, 
                     min_length=args.min_length,
                     repetition_penalty=args.repetition_penalty,
@@ -111,8 +111,8 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                 )
             elif args.generate_method == "beam":
                 summary_ids = model.generate(
-                    input_ids=gen_batch["input_ids"].to(device), 
-                    attention_mask=gen_batch["attention_mask"].to(device), 
+                    input_ids=batch["input_ids"].to(device), 
+                    attention_mask=batch["attention_mask"].to(device), 
                     num_beams=args.num_beams, 
                     max_length=args.max_length, 
                     min_length=args.min_length,
@@ -121,8 +121,8 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                 )
             elif args.generate_method == "sampling":
                 summary_ids = model.generate(
-                    input_ids=gen_batch["input_ids"].to(device), 
-                    attention_mask=gen_batch["attention_mask"].to(device), 
+                    input_ids=batch["input_ids"].to(device), 
+                    attention_mask=batch["attention_mask"].to(device), 
                     do_sample=True,
                     max_length=args.max_length, 
                     min_length=args.min_length,
