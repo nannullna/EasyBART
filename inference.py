@@ -159,7 +159,7 @@ def main(args):
 
     if args.save_json_name is not None:
         assert args.save_json_name.split(".")[-1] == "json", "Saving file name must end with '.json'"
-        save_file_name = os.path.join(OUTPUT_DIR, args.save_json_name)
+        save_file_name = args.save_json_name
     else:
         save_file_name = "summary_output.json"
 
