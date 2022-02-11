@@ -125,6 +125,9 @@ class SummaryDataset(Dataset):
     def get_title_column(self) -> List[str]:
         return self.raw_data['title'].to_pylist() if self._file_ext == ".parquet" else self.raw_data['title'].tolist()
 
+    def get_text_column(self) -> List[str]:
+        return self.raw_data['text'].to_pylist() if self._file_ext == ".parquet" else self.raw_data['text'].tolist()
+
     def _reorganize_text(self, raw_data):
         raw_data.loc[:, "text"] = raw_data.text.apply(combine_sentences)
 

@@ -186,12 +186,14 @@ def main(args):
     assert len(test_id) == len(pred_sents), "lengths of test_id and pred_sents do not match"
     
     test_title = test_dataset.get_title_column()
+    test_text = test_dataset.get_text_column()
 
     output = []
     for i, id in enumerate(test_id):
         output.append({
             "id": id,
             "title": test_title[i],
+            "text": test_text[i],
             "extract_ids": pred_ext_ids[i] if not args.pretrained else None,
             "summary": pred_sents[i]
         })
