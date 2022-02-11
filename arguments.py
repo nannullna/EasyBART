@@ -31,7 +31,7 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     parser.add_argument('--model', type=str, default="./saved")
     parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--tokenizer', type=str, default="gogamza/kobart-summarization")
-    parser.add_argument('--test_file_path', type=str, default="/opt/datasets/aihub_news_summ/Validation/valid.json")
+    parser.add_argument('--test_file_path', type=str, default="/opt/datasets/aihub_news_summ/Test/test.parquet")
     parser.add_argument('--save_json_name', type=str)
     parser.add_argument('--overwrite', action='store_true')
 
