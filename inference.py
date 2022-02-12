@@ -97,13 +97,13 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                     eos_positions=batch["eos_positions"], 
                     k = args.top_k,
                 )
-                gen_batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
+                batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
 
             summary_ids = None
             if args.generate_method == "greedy":
                 summary_ids = model.generate(
-                    input_ids=gen_batch["input_ids"].to(device), 
-                    attention_mask=gen_batch["attention_mask"].to(device),  
+                    input_ids=batch["input_ids"].to(device), 
+                    attention_mask=batch["attention_mask"].to(device),  
                     max_length=args.max_length, 
                     min_length=args.min_length,
                     repetition_penalty=args.repetition_penalty,
@@ -111,8 +111,8 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                 )
             elif args.generate_method == "beam":
                 summary_ids = model.generate(
-                    input_ids=gen_batch["input_ids"].to(device), 
-                    attention_mask=gen_batch["attention_mask"].to(device), 
+                    input_ids=batch["input_ids"].to(device), 
+                    attention_mask=batch["attention_mask"].to(device), 
                     num_beams=args.num_beams, 
                     max_length=args.max_length, 
                     min_length=args.min_length,
@@ -121,8 +121,8 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                 )
             elif args.generate_method == "sampling":
                 summary_ids = model.generate(
-                    input_ids=gen_batch["input_ids"].to(device), 
-                    attention_mask=gen_batch["attention_mask"].to(device), 
+                    input_ids=batch["input_ids"].to(device), 
+                    attention_mask=batch["attention_mask"].to(device), 
                     do_sample=True,
                     max_length=args.max_length, 
                     min_length=args.min_length,
@@ -158,6 +158,10 @@ def main(args):
     OUTPUT_DIR = "./outputs"
     save_file_name = "summary_output.json"
 
+    if args.save_json_name is not None:
+        assert os.path.splitext(args.save_json_name)[-1] == ".json", "save_json_name must end with '.json'"
+        save_file_name = args.save_json_name
+
     if os.path.isfile(os.path.join(OUTPUT_DIR, save_file_name)) and not args.overwrite:
         print(f'{save_file_name} has already been generated.')
         return
@@ -182,14 +186,14 @@ def main(args):
     assert len(test_id) == len(pred_sents), "lengths of test_id and pred_sents do not match"
     
     test_title = test_dataset.get_title_column()
-    test_category = test_dataset.get_category_column()
+    test_text = test_dataset.get_text_column()
 
     output = []
     for i, id in enumerate(test_id):
         output.append({
             "id": id,
             "title": test_title[i],
-            "category": test_category[i],
+            "text": test_text[i],
             "extract_ids": pred_ext_ids[i] if not args.pretrained else None,
             "summary": pred_sents[i]
         })
