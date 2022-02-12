@@ -4,5 +4,5 @@ pandas
 
 # model
 torch
-transformers
+transformers>=4.6.0
 wandb
