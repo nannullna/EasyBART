@@ -1,5 +1,4 @@
 import os
-import json
 from typing import List
 
 import pandas as pd
@@ -9,8 +8,6 @@ import torch
 from torch.utils.data import Dataset
 
 from transformers import BartTokenizerFast
-
-from utils import combine_sentences
 
 class SummaryDataset(Dataset):
     def __init__(
@@ -34,7 +31,6 @@ class SummaryDataset(Dataset):
             self.raw_data = pq.read_table(self.path)
         elif self._file_ext == ".json":
             self.raw_data = pd.read_json(self.path)
-            self._reorganize_text(self.raw_data)
         else:
             raise ValueError("File extension must be .parquet or .json")
 
@@ -51,10 +47,10 @@ class SummaryDataset(Dataset):
 
         if self.is_train:
             if self._file_ext == ".parquet":
-                target_sentence = self.raw_data["abstractive"][idx][0].as_py()
+                target_sentence = self.raw_data["abstractive"][idx].as_py()
                 target_ids = self.raw_data["extractive"][idx].as_py()
             else:
-                target_sentence = self.raw_data["abstractive"][idx][0]
+                target_sentence = self.raw_data["abstractive"][idx]
                 target_ids = self.raw_data["extractive"][idx]
         else:
             target_sentence = None
@@ -127,7 +123,3 @@ class SummaryDataset(Dataset):
 
     def get_text_column(self) -> List[str]:
         return self.raw_data['text'].to_pylist() if self._file_ext == ".parquet" else self.raw_data['text'].tolist()
-
-    def _reorganize_text(self, raw_data):
-        raw_data.loc[:, "text"] = raw_data.text.apply(combine_sentences)
-
