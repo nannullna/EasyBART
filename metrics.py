@@ -7,6 +7,7 @@ import pkg_resources  # pip install py-rouge
 from io import open
 from glob import glob
 from tqdm import tqdm
+import pandas as pd
 
 if platform.system() == "Windows":
     try:
@@ -653,34 +654,8 @@ class RougeScorer:
             weight_factor=1.2,
         )
 
-    def compute_rouge(self, ref_path, hyp_path):
-        ref_fnames = glob(f"{ref_path}/*.txt")
-        hyp_fnames = glob(f"{hyp_path}/*.txt")
-        ref_fnames.sort()
-        hyp_fnames.sort()
-
-        print("-" * 50)
-        print("# of Testset :", len(hyp_fnames))
-        print("-" * 50)
-
-        self.reference_summaries = []
-        self.generated_summaries = []
-
-        for ref_fname, hyp_fname in tqdm(zip(ref_fnames, hyp_fnames), total=len(ref_fnames)):
-            assert os.path.split(ref_fname)[1] == os.path.split(hyp_fname)[1]
-
-            with open(ref_fname, "r", encoding="utf8") as f:
-                ref = f.read().replace("\n", " ")
-
-            with open(hyp_fname, "r", encoding="utf8") as f:
-                hyp = f.read().replace("\n", " ")
-
-            # ref = " ".join(ref)
-            # hyp = " ".join(hyp)
-
-            self.reference_summaries.append(ref)
-            self.generated_summaries.append(hyp)
-
+    def compute_rouge(self, ref_path, hyp_path, is_extractive=False):
+        self.generated_summaries, self.reference_summaries = self._get_hypothesis_references(hyp_path, ref_path, is_extractive)
         scores = self.rouge_evaluator.get_scores(self.generated_summaries, self.reference_summaries)
         str_scores = self.format_rouge_scores(scores)
         self.save_rouge_scores(str_scores)
@@ -715,3 +690,29 @@ class RougeScorer:
             scores["rouge-l"]["p"],
             scores["rouge-l"]["r"],
         )
+
+    def _concat_extracted_sentences(self, text, extract_ids):
+        extract_ids.sort()
+        keysents = [text[idx] for idx in sorted(extract_ids)]
+        keysents = " ".join(keysents)
+        return keysents
+
+    def _get_hypothesis_references(self, hypothesis_json, reference_json, is_extractive = False):
+
+        hyp_df = pd.read_json(hypothesis_json)
+        ref_df = pd.read_json(reference_json)
+        
+        assert hyp_df["id"].equals(ref_df["id"]), "ids of hypothesis and reference do not match"
+
+        generated_summaries = hyp_df["summary"].tolist()
+        reference_summaries = ref_df["abstractive"].tolist()
+
+        if is_extractive:
+            hyp_df["ext_summary"] = None  # create column
+            hyp_df.loc[:, "ext_summary"] = hyp_df.apply(lambda x: self._concat_extracted_sentences(x["text"], x["extract_ids"]), axis=1)
+            generated_summaries = hyp_df["ext_summary"].tolist()
+            # hyp_df = hyp_df.loc[:, ["id", "extract_ids", "ext_summary", "summary"]]
+            # save_path = os.path.splitext(hypothesis_json)[0] + "_ext.json"
+            # hyp_df.to_json(save_path, orient="records", force_ascii=False, indent=4)  # save as json
+
+        return generated_summaries, reference_summaries
