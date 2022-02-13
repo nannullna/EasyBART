@@ -654,12 +654,19 @@ class RougeScorer:
             weight_factor=1.2,
         )
 
-    def compute_rouge(self, ref_path, hyp_path, is_extractive=False):
+    def compute_rouge_path(self, ref_path, hyp_path, is_extractive=False, return_dict=True):
         self.generated_summaries, self.reference_summaries = self._get_hypothesis_references(hyp_path, ref_path, is_extractive)
         scores = self.rouge_evaluator.get_scores(self.generated_summaries, self.reference_summaries)
         str_scores = self.format_rouge_scores(scores)
         self.save_rouge_scores(str_scores)
-        return str_scores
+        return scores if return_dict else str_scores
+
+    def compute_rouge(self, ref_summaries, hyp_summaries, return_dict=True):
+        self.generated_summaries, self.reference_summaries = hyp_summaries, ref_summaries
+        scores = self.rouge_evaluator.get_scores(self.generated_summaries, self.reference_summaries)
+        str_scores = self.format_rouge_scores(scores)
+        self.save_rouge_scores(str_scores)
+        return scores if return_dict else str_scores
 
     def save_rouge_scores(self, str_scores):
         with open("rouge_scores.txt", "w") as output:

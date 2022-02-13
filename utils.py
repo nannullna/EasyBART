@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from metrics import RougeScorer
 
 def set_all_seeds(seed, verbose=False):
     torch.manual_seed(seed)
@@ -98,8 +99,11 @@ def unfreeze_all(model: nn.Module) -> NoReturn:
     for p in model.parameters():
         p.requires_grad = True
         
-def cal_rouge():
-    pass
+def compute_metrics(pred_sentences, ref_sentences):
+    rouge = RougeScorer()
+    scores = rouge.compute_rouge(ref_sentences, pred_sentences)
+    print("Rouge metric scores saved in 'rouge_scores.txt'")
+    return scores
 
 def np_sigmoid(x: np.ndarray):
     x = np.clip(x, -10, 10)

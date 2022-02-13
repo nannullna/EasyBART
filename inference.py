@@ -4,6 +4,7 @@ import argparse
 from typing import Optional, List
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 import torch
 from torch.utils.data import DataLoader
@@ -13,10 +14,9 @@ from transformers import BartTokenizerFast, BartForConditionalGeneration
 from arguments import add_inference_args, add_predict_args
 from models import BartSummaryModelV2
 from dataset import SummaryDataset
-from utils import collate_fn
+from utils import collate_fn, compute_metrics
 
 from tqdm import tqdm
-import glob
 
 
 def get_top_k_sentences(logits: torch.FloatTensor, eos_positions: torch.LongTensor, k: int = 3):
@@ -146,6 +146,16 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
     return pred_sentences, pred_ext_ids
 
 
+def _get_ref_sentences(reference_file):
+    file_ext = os.path.splitext(reference_file)[-1].lower()
+    if file_ext == ".parquet":
+        ref_df = pq.read_table(reference_file, columns=["abstractive"])
+        return ref_df["abstractive"].to_pylist()
+    elif file_ext == ".json":
+        ref_df = pd.read_json(reference_file)
+        return ref_df["abstractive"].tolist()
+
+
 def main(args):
     # tokenizer, model
     tokenizer = BartTokenizerFast.from_pretrained(args.tokenizer)
@@ -185,6 +195,12 @@ def main(args):
     
     assert len(test_id) == len(pred_sents), "lengths of test_id and pred_sents do not match"
     
+    if compute_metrics is not None:
+        ref_sents = _get_ref_sentences(args.test_file_path)
+        print("="*30)
+        print("Rouge Scores:\n", compute_metrics(pred_sents, ref_sents))
+        print("="*30)
+
     test_title = test_dataset.get_title_column()
     test_text = test_dataset.get_text_column()
 
