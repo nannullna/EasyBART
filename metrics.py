@@ -21,7 +21,7 @@ else:  # Ubuntu일 경우
 class Rouge:
     DEFAULT_METRICS = {"rouge-n"}
     DEFAULT_N = 1
-    STATS = ["f", "p", "r"]
+    STATS = ["f1", "precision", "recall"]
     AVAILABLE_METRICS = {"rouge-n", "rouge-l", "rouge-w"}
     AVAILABLE_LENGTH_LIMIT_TYPES = {"words", "bytes"}
     REMOVE_CHAR_PATTERN = re.compile("[^A-Za-z0-9가-힣]")
@@ -125,7 +125,7 @@ class Rouge:
         if weight_factor != 1.0:
             recall = recall ** (1.0 / weight_factor)
         f1_score = Rouge._compute_f_score(precision, recall, alpha)
-        return {"f": f1_score, "p": precision, "r": recall}
+        return {"f1": f1_score, "precision": precision, "recall": recall}
 
     @staticmethod
     def _compute_f_score(precision, recall, alpha=0.5):
@@ -388,7 +388,7 @@ class Rouge:
                                 overlapping_ngrams,
                                 self.alpha,
                             )
-                            if best_current_score is None or score["r"] > best_current_score["r"]:
+                            if best_current_score is None or score["recall"] > best_current_score["recall"]:
                                 best_current_score = score
 
                         for stat in Rouge.STATS:
@@ -518,7 +518,7 @@ class Rouge:
                                 best_current_score = score
                                 best_current_score_wlcs = score_wlcs
                         else:
-                            if best_current_score is None or score["r"] > best_current_score["r"]:
+                            if best_current_score is None or score["recall"] > best_current_score["recall"]:
                                 best_current_score = score
 
                     for stat in Rouge.STATS:
@@ -680,15 +680,15 @@ class RougeScorer:
     F1        >> {:.3f}
     Precision >> {:.3f}
     Recall    >> {:.3f}""".format(
-            scores["rouge-1"]["f"],
-            scores["rouge-1"]["p"],
-            scores["rouge-1"]["r"],
-            scores["rouge-2"]["f"],
-            scores["rouge-2"]["p"],
-            scores["rouge-2"]["r"],
-            scores["rouge-l"]["f"],
-            scores["rouge-l"]["p"],
-            scores["rouge-l"]["r"],
+            scores["rouge-1"]["f1"],
+            scores["rouge-1"]["precision"],
+            scores["rouge-1"]["recall"],
+            scores["rouge-2"]["f1"],
+            scores["rouge-2"]["precision"],
+            scores["rouge-2"]["recall"],
+            scores["rouge-l"]["f1"],
+            scores["rouge-l"]["precision"],
+            scores["rouge-l"]["recall"],
         )
 
     def _concat_extracted_sentences(self, text, extract_ids):
