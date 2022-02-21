@@ -25,7 +25,30 @@ from tqdm.auto import tqdm
 alpha = 0.5
 beta = 0.1
 
+def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
+    """
+    Shift input ids one token to the right.
+    """
+    shifted_input_ids = input_ids.new_zeros(input_ids.shape)
+    shifted_input_ids[:, 1:] = input_ids[:, :-1].clone()
+    shifted_input_ids[:, 0] = decoder_start_token_id
+
+    if pad_token_id is None:
+        raise ValueError("self.model.config.pad_token_id has to be defined.")
+    # replace possible -100 values in labels by `pad_token_id`
+    shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
+
+    return shifted_input_ids
+
 def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float]]:
+
+    if batch["labels"] is not None:
+        ext_input_ids = shift_tokens_right(
+            batch["input_ids"], model.config.pad_token_id, model.config.decoder_start_token_id,
+        )
+        gen_input_ids = shift_tokens_right(
+            batch["labels"], model.config.pad_token_id, model.config.decoder_start_token_id,
+        )
 
     input_ids = batch["input_ids"].to(device)  # (B, L_src)
     attention_mask = batch["attention_mask"].to(device)  # (B, L_src)
@@ -35,13 +58,27 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     B = input_ids.size(0)
     MAX_NUM = torch.max(input_ids.eq(model.config.eos_token_id).sum(1))
 
-    outputs = model.model(input_ids, attention_mask=attention_mask)
-    hidden_states = outputs[0]  # last hidden state [B, L, D]
+
+    encoder_out = model.model.encoder(input_ids=input_ids, attention_mask=attention_mask)
+    ext_decoder_out = model.model.decoder(
+        input_ids=ext_input_ids.to(device), 
+        encoder_hidden_states=encoder_out[0], 
+        encoder_attention_mask=attention_mask,
+    )
+    gen_decoder_out = model.model.decoder(
+        input_ids=gen_input_ids.to(device),
+        encoder_hidden_states=encoder_out[0],
+        encoder_attention_mask=attention_mask,
+    )
+
+    # outputs = model.model(input_ids, attention_mask=attention_mask, decoder_input_ids=decoder_input_ids.to(device))
+    ext_hidden_states = ext_decoder_out[0]  # last hidden state [B, L, D]
+    gen_hidden_states = gen_decoder_out[0]
     
     # extraction part
     sentence_representation = torch.zeros((B, MAX_NUM, model.config.d_model)).to(device) # [B, MAX_NUM, D]
     for i in range(B):
-        _hidden = hidden_states[i][input_ids[i].eq(model.config.eos_token_id)]
+        _hidden = ext_hidden_states[i][input_ids[i].eq(model.config.eos_token_id)]
         l = _hidden.size(0)
         sentence_representation[i, 0:l] = _hidden
     ext_logits = model.classification_head(sentence_representation).squeeze(-1) # [B, MAX_NUM]
@@ -54,19 +91,21 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     ext_loss = ext_loss_fn(ext_logits, ext_labels) # [B]
 
     # generation part
-    gen_logits = model.lm_head(outputs[0]) + model.final_logits_bias
+    gen_logits = model.lm_head(gen_hidden_states) + model.final_logits_bias
     gen_loss_fn = nn.CrossEntropyLoss(reduction='none')
     gen_loss = gen_loss_fn(gen_logits.view(-1, model.config.vocab_size), labels.view(-1)) # [B*L]
     gen_loss = gen_loss.view(B, -1) # [B, L]
     gen_loss = gen_loss.mean(dim=1) # [B]
 
     # loss prediction part
-    pred_out = model.loss_prediction_module(hidden_states) # [B]
+    pred_out = model.loss_prediction_module(ext_hidden_states) # [B]
     gen_loss_clone = gen_loss.clone().detach() # target of loss prediction module
     pred_loss_fn = nn.MSELoss()
     pred_loss = pred_loss_fn(pred_out, gen_loss_clone)
     
-    total_loss = alpha * ext_loss + (1-alpha) * gen_loss.mean() + beta * pred_loss
+    gen_loss = gen_loss.mean()
+
+    total_loss = alpha * ext_loss + (1-alpha) * gen_loss + beta * pred_loss
     
     return total_loss, {"ext_loss": ext_loss.item(), "gen_loss": gen_loss.item(), "pred_loss": pred_loss.item(), "ext_logits": ext_logits}
 
@@ -182,9 +221,9 @@ def main(args):
     if args.use_wandb:
         import wandb
         wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.wandb_run_name,
+            # project=args.wandb_project,
+            # entity=args.wandb_entity,
+            # name=args.wandb_run_name,
         )
 
     if args.seed:
@@ -194,11 +233,11 @@ def main(args):
     MODEL_NAME = "gogamza/kobart-summarization"
     config = BartConfig.from_pretrained(MODEL_NAME)
     tokenizer = BartTokenizerFast.from_pretrained(MODEL_NAME)
-    model = BartSummaryModelV3.from_pretrained(MODEL_NAME)
+    model = BartSummaryModelV2.from_pretrained(MODEL_NAME)
 
     # load dataset, dataloader
-    train_path = "/opt/ml/dataset/Training/train.parquet"
-    eval_path  = "/opt/ml/dataset/Validation/valid.parquet"
+    train_path = "/opt/datasets/aihub_news_summ/Train/train.parquet"
+    eval_path  = "/opt/datasets/aihub_news_summ/Validation/valid.parquet"
 
     train_dataset = SummaryDataset(train_path, tokenizer, is_train=True) if args.do_train else None
     eval_dataset  = SummaryDataset(eval_path, tokenizer, is_train=True) if args.do_eval or args.do_predict else None

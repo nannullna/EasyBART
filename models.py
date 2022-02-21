@@ -176,7 +176,7 @@ class BartSummaryModelV2(BartForConditionalGeneration):
             pooler_dropout=config.classifier_dropout,
         )
         self.loss_prediction = nn.Sequential(
-            nn.Linear(config.d_model),
+            nn.Linear(config.d_model, config.d_model),
             nn.Dropout(),
             nn.ReLU(),
             nn.Linear(config.d_model, 1)
@@ -211,7 +211,7 @@ class BartSummaryModelV2(BartForConditionalGeneration):
             raise NotImplementedError(
                 f"Passing input embeddings is currently not supported for {self.__class__.__name__}"
             )
-        
+
         outputs = self.model(
             input_ids,
             attention_mask=attention_mask,
