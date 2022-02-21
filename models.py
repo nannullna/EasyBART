@@ -10,6 +10,8 @@ from transformers.modeling_outputs import Seq2SeqSequenceClassifierOutput
 from transformers.file_utils import ModelOutput
 from torch.nn.utils import weight_norm
 
+from utils import init_weight
+
 
 @dataclass
 class SentenceClassifierOutput(ModelOutput):
@@ -269,8 +271,7 @@ class BartSummaryModelV3(BartForConditionalGeneration):
             num_classes=1, # num_classes should be 1
             pooler_dropout=config.classifier_dropout,
         )
-        self.model._init_weights(self.classification_head.dense)
-        self.model._init_weights(self.classification_head.out_proj)
+        self.classification_head.apply(init_weight)
 
     def classify(
         self,
@@ -365,13 +366,12 @@ class BartSummaryModelV4(BartForConditionalGeneration):
         self.classification_head = TCNClassificationHead(
             input_size=config.d_model,
             output_size=1,
-            num_channels=[config.d_model, config.d_model, config.d_model, config.d_model],
+            num_channels=[100]*10,
             kernel_size=2,
             dropout=0.2
 
         )
-        self.model._init_weights(self.classification_head.linear)
-        self.model._init_weights(self.classification_head.tcn)
+        # self.classification_head.apply(init_weight)
 
     def classify(
         self,
@@ -498,6 +498,8 @@ class Chomp1d(nn.Module):
 class TemporalBlock(nn.Module):
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
         super(TemporalBlock, self).__init__()
+        # Weight normalization is implemented via a hook that recomputes the weight tensor
+        # from the magnitude and direction before every forward() call.
         conv1 = weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size, 
             stride=stride, padding=padding, dilation=dilation))
         chomp1 = Chomp1d(padding)
@@ -521,8 +523,8 @@ class TemporalBlock(nn.Module):
         self.init_weights()
 
     def init_weights(self):
-        self.net[0].weight.data.normal_(0, 0.01)
-        self.net[5].weight.data.normal_(0, 0.01)
+        self.net[0].weight.data.normal_(0, 0.01)  # conv1
+        self.net[5].weight.data.normal_(0, 0.01)  # conv2
         if self.downsample is not None:
             self.downsample.weight.data.normal_(0, 0.01)
     
