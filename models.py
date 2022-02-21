@@ -168,12 +168,15 @@ class BartSummaryModel(BartForConditionalGeneration):
 class BartSummaryModelV2(BartForConditionalGeneration):
     def __init__(self, config: BartConfig, **kwargs):
         super(BartSummaryModelV2, self).__init__(config, **kwargs)
+        self.num_classes = 1
         self.classification_head = BartClassificationHead(
             input_dim=config.d_model,
             inner_dim=config.d_model,
-            num_classes=1, # num_classes should be 1
+            num_classes=self.num_classes, # num_classes should be 1
             pooler_dropout=config.classifier_dropout,
         )
+        self.linear = nn.Linear(config.d_model, self.num_classes)  # for loss prediciton module
+
         self.model._init_weights(self.classification_head.dense)
         self.model._init_weights(self.classification_head.out_proj)
 
@@ -260,6 +263,61 @@ class BartSummaryModelV2(BartForConditionalGeneration):
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
         )
+
+    def loss_prediction_module(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        decoder_input_ids=None,
+        decoder_attention_mask=None,
+        head_mask=None,
+        decoder_head_mask=None,
+        cross_attn_head_mask=None,
+        encoder_outputs=None,
+        inputs_embeds=None,
+        decoder_inputs_embeds=None,
+        target_loss=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        
+        if target_loss is not None:
+            use_cache = False
+
+        if input_ids is None and inputs_embeds is not None:
+            raise NotImplementedError(
+                f"Passing input embeddings is currently not supported for {self.__class__.__name__}"
+            )
+
+        # BartModel
+        outputs = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            encoder_outputs=encoder_outputs,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        last_hidden_states = outputs[0]  # (B, L_src, 1)
+        pred_loss = self.linear(last_hidden_states).mean()
+
+        loss_prediction_loss = None
+        if target_loss is not None:
+            # loss_fct = nn.MSELoss()
+            loss_prediction_loss = torch.abs(pred_loss - target_loss)
+            
+        return loss_prediction_loss
 
 
 class BartSummaryModelV3(BartForConditionalGeneration):
