@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 alpha = 0.5
+beta = 0.1
 
 def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float]]:
 
@@ -31,12 +32,42 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     answers = batch["answers"].to(device) # 추출요약 (B, 3)
     labels = batch["labels"].to(device) # 생성요약 (B, L_tgt)
 
-    ext_out = model.classify(input_ids=input_ids, attention_mask=attention_mask, labels=answers)
-    gen_out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+    outputs = model(input_ids, attention_mask=attention_mask)
+    # extraction part
+    B = input_ids.size(0)
+    MAX_NUM = torch.max(input_ids.eq(model.config.eos_token_id).sum(1))
 
-    total_loss = alpha * ext_out.loss + (1-alpha) * gen_out.loss
+    hidden_states = outputs[0]  # last hidden state [B, L, D]
+    sentence_representation = torch.zeros((B, MAX_NUM, model.config.d_model)).to(device) # [B, MAX_NUM, D]
+    for i in range(B):
+        _hidden = hidden_states[i][input_ids[i].eq(model.config.eos_token_id)]
+        l = _hidden.size(0)
+        sentence_representation[i, 0:l] = _hidden
+    ext_logits = model.classification_head(sentence_representation).squeeze(-1) # [B, MAX_NUM]
+    one_hot = torch.zeros((B, MAX_NUM)).to(device)
+    for i in range(B):
+        one_hot[i,:].index_fill_(0, answers[i][answers[i] >= 0], 1.0)
+    ext_labels = one_hot.clone()
 
-    return total_loss, {"ext_loss": ext_out.loss.item(), "gen_loss": gen_out.loss.item(), "ext_logits": ext_out.logits}
+    ext_loss_fn = nn.BCEWithLogitsLoss()
+    ext_loss = ext_loss_fn(ext_logits, ext_labels) # [B]
+
+    # generation part
+    gen_logits = model.lm_head(outputs[0]) + model.final_logits_bias
+    gen_loss_fn = nn.CrossEntropyLoss(reduction='none')
+    gen_loss = gen_loss_fn(gen_logits.view(-1, model.config.vocab_size), labels.view(-1)) # [B*L]
+    gen_loss = gen_loss.view(B, -1) # [B, L]
+    gen_loss = gen_loss.mean(dim=1) # [B]
+
+    # loss prediction part
+    pred_out = model.loss_prediction_module(hidden_states) # [B]
+    gen_loss_clone = gen_loss.clone().detach() # target of loss prediction module
+    pred_loss_fn = nn.MSELoss()
+    pred_loss = pred_loss_fn(pred_out, gen_loss_clone)
+    
+    total_loss = alpha * ext_loss + (1-alpha) * gen_loss.mean() + beta * pred_loss
+    
+    return total_loss, {"ext_loss": ext_loss.item(), "gen_loss": gen_loss.item(), "pred_loss": pred_loss.item(), "ext_logits": ext_logits}
 
 def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) -> int:
     
