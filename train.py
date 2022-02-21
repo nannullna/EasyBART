@@ -32,12 +32,13 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     answers = batch["answers"].to(device) # 추출요약 (B, 3)
     labels = batch["labels"].to(device) # 생성요약 (B, L_tgt)
 
-    outputs = model(input_ids, attention_mask=attention_mask)
-    # extraction part
     B = input_ids.size(0)
     MAX_NUM = torch.max(input_ids.eq(model.config.eos_token_id).sum(1))
 
+    outputs = model.model(input_ids, attention_mask=attention_mask)
     hidden_states = outputs[0]  # last hidden state [B, L, D]
+    
+    # extraction part
     sentence_representation = torch.zeros((B, MAX_NUM, model.config.d_model)).to(device) # [B, MAX_NUM, D]
     for i in range(B):
         _hidden = hidden_states[i][input_ids[i].eq(model.config.eos_token_id)]
