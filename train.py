@@ -117,6 +117,7 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
     optimizer.zero_grad()
     ext_losses = []
     gen_losses = []
+    pred_losses = []
     all_logits = []
 
     if args.use_wandb:
@@ -133,6 +134,7 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
             loss.backward()
             ext_losses.append(returned_dict["ext_loss"])
             gen_losses.append(returned_dict["gen_loss"])
+            pred_losses.append(returned_dict["pred_loss"])
             all_logits.append(returned_dict["ext_logits"].detach().cpu().numpy().flatten())
             step += 1
 
@@ -146,6 +148,7 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
                 train_metrics = {
                     "train/ext_loss": np.mean(ext_losses), 
                     "train/gen_loss": np.mean(gen_losses), 
+                    "train/pred_loss": np.mean(pred_losses), 
                     "train/probs": wandb.Histogram(np_histogram=hist),
                     "step": step,
                 }
@@ -154,6 +157,7 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
 
                 ext_losses = []
                 gen_losses = []
+                pred_losses = []
                 all_logits = []
 
             if args.do_eval and (step+1) % args.eval_steps == 0:
