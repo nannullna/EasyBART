@@ -14,7 +14,7 @@ from transformers import BartTokenizerFast
 from transformers.models.bart.configuration_bart import BartConfig
 
 from arguments import add_train_args, add_predict_args, add_wandb_args
-from models import BartSummaryModelV2, BartSummaryModelV3
+import models
 from inference import predict
 from utils import set_all_seeds, collate_fn, freeze, unfreeze_all, np_sigmoid
 from dataset import SummaryDataset
@@ -124,8 +124,8 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
         import wandb
 
     if args.do_train:
-
-        for batch in tqdm(train_dl):
+        tqdm_bar = tqdm(train_dl)
+        for batch in tqdm_bar:
 
             model.train()
             device = torch.device("cpu") if args.no_cuda or not torch.cuda.is_available() else torch.device("cuda")
@@ -162,6 +162,8 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
 
             if args.do_eval and (step+1) % args.eval_steps == 0:
                 eval(args, model, eval_dl, step)
+            
+            tqdm_bar.set_description(f"Train step {step} ext_loss {np.mean(ext_losses):.3f} gen_loss {np.mean(gen_losses):.3f} pred_loss {np.mean(pred_losses):.3f}")
 
     return step
 
@@ -229,6 +231,8 @@ def main(args):
             # entity=args.wandb_entity,
             # name=args.wandb_run_name,
         )
+        wandb.config.update(args)
+
 
     if args.seed:
         set_all_seeds(args.seed, verbose=True)
@@ -237,14 +241,12 @@ def main(args):
     MODEL_NAME = "gogamza/kobart-summarization"
     config = BartConfig.from_pretrained(MODEL_NAME)
     tokenizer = BartTokenizerFast.from_pretrained(MODEL_NAME)
-    model = BartSummaryModelV2.from_pretrained(MODEL_NAME)
+    model = getattr(models, args.model_arch).from_pretrained(MODEL_NAME)
 
-    # load dataset, dataloader
-    train_path = "/opt/datasets/aihub_news_summ/Train/train.parquet"
-    eval_path  = "/opt/datasets/aihub_news_summ/Validation/valid.parquet"
+    wandb.watch(model, log='all', log_freq=500)  
 
-    train_dataset = SummaryDataset(train_path, tokenizer, is_train=True) if args.do_train else None
-    eval_dataset  = SummaryDataset(eval_path, tokenizer, is_train=True) if args.do_eval or args.do_predict else None
+    train_dataset = SummaryDataset(args.train_path, tokenizer, is_train=True) if args.do_train else None
+    eval_dataset  = SummaryDataset(args.eval_path, tokenizer, is_train=True) if args.do_eval or args.do_predict else None
 
     if train_dataset is not None:
         print(f"train_dataset length: {len(train_dataset)}")

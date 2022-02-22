@@ -6,7 +6,10 @@ def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--do_train", action='store_true')
     parser.add_argument("--do_eval", action='store_true')
     parser.add_argument("--do_predict", action='store_true')
-
+    
+    parser.add_argument("--model_arch", default="BartSummaryModelV2", type=str, help="model architecture")
+    parser.add_argument("--train_path", default="/opt/datasets/aihub_news_summ/Train/train.parquet", type=str, help="train dataset path")
+    parser.add_argument("--eval_path", default="/opt/datasets/aihub_news_summ/Validation/valid.parquet", type=str, help="valid dataset path")
     parser.add_argument("--output_dir", default="./saved", type=str, help="path to save the trained model")
     
     parser.add_argument("--per_device_train_batch_size", default=4, type=int, help="train batch size per device (default: 4)")
