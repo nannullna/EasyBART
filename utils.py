@@ -103,7 +103,6 @@ def unfreeze_all(model: nn.Module) -> NoReturn:
 def compute_metrics(pred_sentences, ref_sentences):
     rouge = RougeScorer()
     scores = rouge.compute_rouge(ref_sentences, pred_sentences)
-    print("Rouge metric scores saved in 'rouge_scores.txt'")
     return scores
 
 def np_sigmoid(x: np.ndarray):

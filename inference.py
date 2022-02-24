@@ -171,7 +171,7 @@ def main(args):
         args.pretrained = True
     
     # get data
-    OUTPUT_DIR = "./outputs"
+    OUTPUT_DIR = "./outputs/summary_outputs"
     save_file_name = "summary_output.json"
 
     if args.save_json_name is not None:
