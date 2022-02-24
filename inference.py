@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from transformers import BartTokenizerFast, BartForConditionalGeneration
 
 from arguments import add_inference_args, add_predict_args
-from models import BartSummaryModelV2
+import models
 from dataset import SummaryDataset
 from utils import collate_fn, compute_metrics
 
@@ -159,10 +159,16 @@ def _get_ref_sentences(reference_file):
 def main(args):
     # tokenizer, model
     tokenizer = BartTokenizerFast.from_pretrained(args.tokenizer)
-    if args.pretrained:
+    try:
+        # load saved model
+        with open(os.path.join(args.model, "config.json"), "r") as f:
+            architecture = json.load(f)["architectures"][0]
+        model = getattr(models, architecture).from_pretrained(args.model)
+        args.pretrained = False
+    except:
+        # load from huggingface
         model = BartForConditionalGeneration.from_pretrained(args.model)
-    else:
-        model = BartSummaryModelV2.from_pretrained(args.model)
+        args.pretrained = True
     
     # get data
     OUTPUT_DIR = "./outputs"
