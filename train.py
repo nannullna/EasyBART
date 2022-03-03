@@ -76,19 +76,20 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     gen_hidden_states = gen_decoder_out[0]
     
     # extraction part
-    sentence_representation = torch.zeros((B, MAX_NUM, model.config.d_model)).to(device) # [B, MAX_NUM, D]
+    ext_logits = model.classification_head(ext_hidden_states).squeeze(-1) # [B, L]
+    logits = torch.full((B, MAX_NUM), -1e9, dtype=torch.float).to(device) # [B, MAX_NUM]
     for i in range(B):
-        _hidden = ext_hidden_states[i][input_ids[i].eq(model.config.eos_token_id)]
-        l = _hidden.size(0)
-        sentence_representation[i, 0:l] = _hidden
-    ext_logits = model.classification_head(sentence_representation).squeeze(-1) # [B, MAX_NUM]
+        _logit = ext_logits[i][input_ids[i].eq(model.config.eos_token_id)]
+        l = _logit.size(0)
+        logits[i, 0:l] = _logit
+    
     one_hot = torch.zeros((B, MAX_NUM)).to(device)
     for i in range(B):
         one_hot[i,:].index_fill_(0, answers[i][answers[i] >= 0], 1.0)
     ext_labels = one_hot.clone()
 
     ext_loss_fn = nn.BCEWithLogitsLoss()
-    ext_loss = ext_loss_fn(ext_logits, ext_labels) # [B]
+    ext_loss = ext_loss_fn(logits, ext_labels) # [B]
 
     # generation part
     gen_logits = model.lm_head(gen_hidden_states) + model.final_logits_bias
