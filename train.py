@@ -15,15 +15,12 @@ from transformers.models.bart.configuration_bart import BartConfig
 
 from arguments import add_train_args, add_predict_args, add_wandb_args
 import models
-from inference import predict
-from utils import set_all_seeds, collate_fn, freeze, unfreeze_all, np_sigmoid
+from inference import predict, get_top_k_sentences, extract_sentences, generate_summary
+from utils import set_all_seeds, collate_fn, freeze, unfreeze_all, np_sigmoid, compute_rouge_l
 from dataset import SummaryDataset
 from torch.utils.data import DataLoader
 
 from tqdm.auto import tqdm
-
-alpha = 0.5
-beta = 0.1
 
 def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
     """
@@ -40,7 +37,7 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
 
     return shifted_input_ids
 
-def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float]]:
+def train_step(args, model, tokenizer, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float]]:
 
     if batch["labels"] is not None:
         ext_input_ids = shift_tokens_right(
@@ -58,7 +55,6 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     B = input_ids.size(0)
     MAX_NUM = torch.max(input_ids.eq(model.config.eos_token_id).sum(1))
 
-
     encoder_out = model.model.encoder(input_ids=input_ids, attention_mask=attention_mask)
     ext_decoder_out = model.model.decoder(
         input_ids=ext_input_ids.to(device), 
@@ -71,8 +67,7 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
         encoder_attention_mask=attention_mask,
     )
 
-    # outputs = model.model(input_ids, attention_mask=attention_mask, decoder_input_ids=decoder_input_ids.to(device))
-    ext_hidden_states = ext_decoder_out[0]  # last hidden state [B, L, D]
+    ext_hidden_states = ext_decoder_out[0]  # [B, L, D]
     gen_hidden_states = gen_decoder_out[0]
     
     # extraction part
@@ -98,19 +93,36 @@ def train_step(model, batch, device) -> Tuple[torch.FloatTensor, Dict[str, float
     gen_loss = gen_loss.view(B, -1) # [B, L]
     gen_loss = gen_loss.mean(dim=1) # [B]
 
-    # loss prediction part
-    pred_out = model.loss_prediction_module(ext_hidden_states) # [B]
-    gen_loss_clone = gen_loss.clone().detach() # target of loss prediction module
-    pred_loss_fn = nn.MSELoss()
-    pred_loss = pred_loss_fn(pred_out, gen_loss_clone)
-    
-    gen_loss = gen_loss.mean()
+    total_loss = args.loss_alpha * ext_loss + (1-args.loss_alpha) * gen_loss.mean()
+    metrics = {"ext_loss": ext_loss.item(), "gen_loss": gen_loss.mean().item(), "ext_logits": logits}
 
-    total_loss = alpha * ext_loss + (1-alpha) * gen_loss + beta * pred_loss
-    
-    return total_loss, {"ext_loss": ext_loss.item(), "gen_loss": gen_loss.item(), "pred_loss": pred_loss.item(), "ext_logits": ext_logits}
+    # if using prediction module
+    if args.prediction_module is not None:
+        pred_out = model.loss_prediction_module(ext_hidden_states) # [B]
+        if args.prediction_module.lower() == "lpm":
+            target_out = gen_loss.clone().detach() # target of loss prediction module; [B]
+        elif args.prediction_module.lower() == "rpm":
+            model.eval()  # dropout 비활성화 (어차피 generate()만 하는거라 안 해도 되나?)
+            with torch.no_grad():  # 트래킹 멈추기
+                top_ext_ids = get_top_k_sentences(
+                    logits=logits.clone().detach().cpu(), 
+                    eos_positions=batch["eos_positions"], 
+                    k = args.top_k,
+                )
+                batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
+                generated_ids = generate_summary(args, model, batch, device)
+            REMOVE_IDS = np.array([tokenizer.bos_token_id, tokenizer.eos_token_id, tokenizer.pad_token_id, model.config.decoder_start_token_id])
+            target_out = compute_rouge_l(generated_ids.cpu().numpy(), labels.cpu().numpy(), REMOVE_IDS)["f1"]  # set Rouge-L F1 score as target output
+            target_out = torch.from_numpy(target_out).to(device)  # target of rouge prediction module; [B]
+        
+        pred_loss_fn = nn.MSELoss()
+        pred_loss = pred_loss_fn(pred_out, target_out)
+        total_loss += args.loss_beta * pred_loss
+        metrics.update({"pred_loss": pred_loss.item()})
 
-def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) -> int:
+    return total_loss, metrics
+
+def train_loop(args, model, tokenizer, train_dl, eval_dl, optimizer, prev_step: int = 0) -> int:
     
     step = prev_step
 
@@ -131,7 +143,7 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
             model.train()
             device = torch.device("cpu") if args.no_cuda or not torch.cuda.is_available() else torch.device("cuda")
 
-            loss, returned_dict = train_step(model, batch, device)
+            loss, returned_dict = train_step(args, model, tokenizer, batch, device)
             loss.backward()
             ext_losses.append(returned_dict["ext_loss"])
             gen_losses.append(returned_dict["gen_loss"])
@@ -162,16 +174,16 @@ def train_loop(args, model, train_dl, eval_dl, optimizer, prev_step: int = 0) ->
                 all_logits = []
 
             if args.do_eval and (step+1) % args.eval_steps == 0:
-                eval(args, model, eval_dl, step)
-            
+                eval(args, model, tokenizer, eval_dl, step)
+
             tqdm_bar.set_description(f"Train step {step} ext_loss {np.mean(ext_losses):.3f} gen_loss {np.mean(gen_losses):.3f} pred_loss {np.mean(pred_losses):.3f}")
 
     return step
 
 
-def eval(args, model, eval_dl, step) -> Dict[str, float]:
+def eval(args, model, tokenizer, eval_dl, step) -> Dict[str, float]:
     device = torch.device("cpu") if args.no_cuda or not torch.cuda.is_available() else torch.device("cuda")
-    eval_metrics = eval_loop(model, eval_dl, device)
+    eval_metrics = eval_loop(model, tokenizer, eval_dl, device)
     eval_metrics = {("eval/" + k): v for k, v in eval_metrics.items()}
     eval_metrics["step"] = step
 
@@ -183,7 +195,7 @@ def eval(args, model, eval_dl, step) -> Dict[str, float]:
     return eval_metrics
 
 
-def eval_loop(model, eval_dl, device) -> Dict[str, float]:
+def eval_loop(model, tokenizer, eval_dl, device) -> Dict[str, float]:
 
     if args.use_wandb:
         import wandb
@@ -192,24 +204,95 @@ def eval_loop(model, eval_dl, device) -> Dict[str, float]:
 
     ext_loss = 0.0
     gen_loss = 0.0
+    pred_loss = 0.0
     all_logits = []
     n = 0
 
     with torch.no_grad():
         for batch in tqdm(eval_dl):
+            if batch["labels"] is not None:
+                ext_input_ids = shift_tokens_right(
+                    batch["input_ids"], model.config.pad_token_id, model.config.decoder_start_token_id,
+                )
+                gen_input_ids = shift_tokens_right(
+                    batch["labels"], model.config.pad_token_id, model.config.decoder_start_token_id,
+                )
+
             input_ids = batch["input_ids"].to(device)  # (B, L_src)
             attention_mask = batch["attention_mask"].to(device)  # (B, L_src)
             answers = batch["answers"].to(device) if "answers" in batch.keys() else None # 추출요약 (B, 3)
             labels = batch["labels"].to(device) if "labels" in batch.keys() else None
 
-            ext_out = model.classify(input_ids=input_ids, attention_mask=attention_mask, labels=answers)
-            gen_out = model.forward(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            all_logits.append(ext_out.logits.cpu().numpy().flatten())
+            B = input_ids.size(0)
+            MAX_NUM = torch.max(input_ids.eq(model.config.eos_token_id).sum(1))
+
+            encoder_out = model.model.encoder(input_ids=input_ids, attention_mask=attention_mask)
+            ext_decoder_out = model.model.decoder(
+                input_ids=ext_input_ids.to(device), 
+                encoder_hidden_states=encoder_out[0], 
+                encoder_attention_mask=attention_mask,
+            )
+            gen_decoder_out = model.model.decoder(
+                input_ids=gen_input_ids.to(device),
+                encoder_hidden_states=encoder_out[0],
+                encoder_attention_mask=attention_mask,
+            )
+
+            ext_hidden_states = ext_decoder_out[0]  # last hidden state [B, L, D]
+            gen_hidden_states = gen_decoder_out[0]
+            
+            # extraction part
+            ext_logits = model.classification_head(ext_hidden_states).squeeze(-1) # [B, L]
+            logits = torch.full((B, MAX_NUM), -1e9, dtype=torch.float).to(device) # [B, MAX_NUM]
+            for i in range(B):
+                _logit = ext_logits[i][input_ids[i].eq(model.config.eos_token_id)]
+                l = _logit.size(0)
+                logits[i, 0:l] = _logit
+            
+            one_hot = torch.zeros((B, MAX_NUM)).to(device)
+            for i in range(B):
+                one_hot[i,:].index_fill_(0, answers[i][answers[i] >= 0], 1.0)
+            ext_labels = one_hot.clone()
+
+            ext_loss_fn = nn.BCEWithLogitsLoss()
+            ext_loss_b = ext_loss_fn(logits, ext_labels) # [B]
+
+            # generation part
+            gen_logits = model.lm_head(gen_hidden_states) + model.final_logits_bias
+            gen_loss_fn = nn.CrossEntropyLoss(reduction='none')
+            gen_loss_b = gen_loss_fn(gen_logits.view(-1, model.config.vocab_size), labels.view(-1)) # [B*L]
+            gen_loss_b = gen_loss_b.view(B, -1) # [B, L]
+            gen_loss_b = gen_loss_b.mean(dim=1) # [B]
+
+            all_logits.append(logits.cpu().numpy().flatten())
 
             # weighted sum
             size = len(input_ids)
-            ext_loss = (n * ext_loss + size * ext_out.loss.item()) / (n + size)
-            gen_loss = (n * gen_loss + size * gen_out.loss.item()) / (n + size)
+            ext_loss = (n * ext_loss + size * ext_loss_b.item()) / (n + size)
+            gen_loss = (n * gen_loss + size * gen_loss_b.mean().item()) / (n + size)
+
+            # if using prediction module
+            if args.prediction_module is not None:
+                pred_out = model.loss_prediction_module(ext_hidden_states) # [B]
+                if args.prediction_module.lower() == "lpm":
+                    target_out = gen_loss_b.clone().detach() # target of loss prediction module; [B]
+                elif args.prediction_module.lower() == "rpm":
+                    top_ext_ids = get_top_k_sentences(
+                        logits=logits.clone().detach().cpu(), 
+                        eos_positions=batch["eos_positions"], 
+                        k = args.top_k,
+                    )
+                    batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
+                    generated_ids = generate_summary(args, model, batch, device)
+                    REMOVE_IDS = np.array([tokenizer.bos_token_id, tokenizer.eos_token_id, tokenizer.pad_token_id, model.config.decoder_start_token_id])
+                    target_out = compute_rouge_l(generated_ids.cpu().numpy(), labels.cpu().numpy(), REMOVE_IDS)["f1"]  # set Rouge-L F1 score as target output
+                    target_out = torch.from_numpy(target_out).to(device)  # target of rouge prediction module; [B]
+                
+                pred_loss_fn = nn.MSELoss()
+                pred_loss_b = pred_loss_fn(pred_out, target_out)
+                # weighted sum
+                pred_loss = (n * pred_loss + size * pred_loss_b.item()) / (n + size)
+
             n += size
 
     all_logits = np.hstack(all_logits)
@@ -219,6 +302,7 @@ def eval_loop(model, eval_dl, device) -> Dict[str, float]:
     return {
         "ext_loss": ext_loss,
         "gen_loss": gen_loss,
+        "pred_loss": pred_loss if args.prediction_module else None,
         "probs": wandb.Histogram(np_histogram=hist) if args.use_wandb else None,
     }
 
@@ -289,7 +373,7 @@ def main(args):
     if args.do_train:
         for epoch in range(int(args.num_train_epochs)):
             print("=" * 10 + "Epoch " + str(epoch+1) + " has started! " + "=" * 10)
-            total_steps = train_loop(args, model, train_dl, eval_dl, optimizer, total_steps)
+            total_steps = train_loop(args, model, tokenizer, train_dl, eval_dl, optimizer, total_steps)
 
             # save the trained model at the end of every epoch
             model.save_pretrained(os.path.join(args.output_dir, f"epoch_{epoch}"))
@@ -304,7 +388,7 @@ def main(args):
     # the final evaluation and prediction loop will run!
     if args.do_eval:
         print("=" * 10 + "The final evaluation loop has started!" + "=" * 10)
-        eval(args, model, eval_dl, total_steps)
+        eval(args, model, tokenizer, eval_dl, total_steps)
 
     if args.do_predict:
         print("=" * 10 + "The final prediction loop has started!" + "=" * 10)

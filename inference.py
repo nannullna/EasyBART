@@ -71,6 +71,42 @@ def extract_sentences(
         "attention_mask": attention_mask,
     }
 
+def generate_summary(args, model, batch, device):
+
+    summary_ids = None
+    if args.generate_method == "greedy":
+        summary_ids = model.generate(
+            input_ids=batch["input_ids"].to(device), 
+            attention_mask=batch["attention_mask"].to(device),  
+            max_length=args.max_length, 
+            min_length=args.min_length,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+        )
+    elif args.generate_method == "beam":
+        summary_ids = model.generate(
+            input_ids=batch["input_ids"].to(device), 
+            attention_mask=batch["attention_mask"].to(device), 
+            num_beams=args.num_beams, 
+            max_length=args.max_length, 
+            min_length=args.min_length,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+        )
+    elif args.generate_method == "sampling":
+        summary_ids = model.generate(
+            input_ids=batch["input_ids"].to(device), 
+            attention_mask=batch["attention_mask"].to(device), 
+            do_sample=True,
+            max_length=args.max_length, 
+            min_length=args.min_length,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+            top_k=50,
+            top_p=0.92,
+        )
+
+    return summary_ids
 
 def predict(args, model, test_dl, tokenizer) -> List[str]:
 
@@ -99,39 +135,8 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                 )
                 batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
 
-            summary_ids = None
-            if args.generate_method == "greedy":
-                summary_ids = model.generate(
-                    input_ids=batch["input_ids"].to(device), 
-                    attention_mask=batch["attention_mask"].to(device),  
-                    max_length=args.max_length, 
-                    min_length=args.min_length,
-                    repetition_penalty=args.repetition_penalty,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size,
-                )
-            elif args.generate_method == "beam":
-                summary_ids = model.generate(
-                    input_ids=batch["input_ids"].to(device), 
-                    attention_mask=batch["attention_mask"].to(device), 
-                    num_beams=args.num_beams, 
-                    max_length=args.max_length, 
-                    min_length=args.min_length,
-                    repetition_penalty=args.repetition_penalty,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size,
-                )
-            elif args.generate_method == "sampling":
-                summary_ids = model.generate(
-                    input_ids=batch["input_ids"].to(device), 
-                    attention_mask=batch["attention_mask"].to(device), 
-                    do_sample=True,
-                    max_length=args.max_length, 
-                    min_length=args.min_length,
-                    repetition_penalty=args.repetition_penalty,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size,
-                    top_k=50,
-                    top_p=0.92,
-                )
-            
+            summary_ids = generate_summary(args, model, batch, device)
+        
             summary_sent = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in summary_ids]
             pred_sentences.extend(summary_sent)
 
@@ -164,11 +169,11 @@ def main(args):
         with open(os.path.join(args.model, "config.json"), "r") as f:
             architecture = json.load(f)["architectures"][0]
         model = getattr(models, architecture).from_pretrained(args.model)
-        args.pretrained = False
+        assert args.pretrained == False
     except:
         # load from huggingface
         model = BartForConditionalGeneration.from_pretrained(args.model)
-        args.pretrained = True
+        assert args.pretrained == True
     
     # get data
     OUTPUT_DIR = "./outputs/summary_outputs"
@@ -201,7 +206,7 @@ def main(args):
     
     assert len(test_id) == len(pred_sents), "lengths of test_id and pred_sents do not match"
     
-    if compute_metrics is not None:
+    if args.compute_metrics:
         ref_sents = _get_ref_sentences(args.test_file_path)
         print("="*30)
         print("Rouge Scores:\n", compute_metrics(pred_sents, ref_sents))

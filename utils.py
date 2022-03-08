@@ -12,6 +12,47 @@ import torch.nn.init as init
 
 from metrics import RougeScorer
 
+
+def compute_rouge_l(candidates: np.ndarray, references: np.ndarray, remove_ids: np.ndarray) -> Dict:
+    assert len(candidates) == len(references)
+
+    prec_scores = []
+    rec_scores = []
+    f1_scores = []
+
+    for candidate, reference in zip(candidates, references):
+        # remove special token ids
+        candidate = np.setdiff1d(candidate, remove_ids)
+        reference = np.setdiff1d(reference, remove_ids)
+
+        # compute lcs
+        m = len(candidate)
+        n = len(reference)
+        dp = [[0] * (n + 1) for _ in range(m + 1)]
+        for i in range(m + 1):
+            for j in range(n + 1):
+                if i == 0 or j == 0:
+                    dp[i][j] = 0
+                elif candidate[i - 1] == reference[j - 1]:
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                else:
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+
+        # append scores
+        match = dp[m][n]
+        precision = match / n if n > 0 else 0
+        recall = match / m if m > 0 else 0
+        f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+
+        prec_scores.append(precision)
+        rec_scores.append(recall)
+        f1_scores.append(f1)
+
+    return {"precision": np.array(prec_scores, dtype=np.float32),
+            "recall": np.array(rec_scores, dtype=np.float32),
+            "f1": np.array(f1_scores, dtype=np.float32)}  # (B,)
+
+
 def set_all_seeds(seed, verbose=False):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
