@@ -230,17 +230,18 @@ class BartSummaryModelV2(BartForConditionalGeneration):
         )
         
         device = self.model.device
+        hidden_states = outputs[0] # [B, L, D]
+        all_logits = self.classification_head(hidden_states).squeeze(-1) # [B, L]
+
         B = input_ids.size(0)
         MAX_NUM = torch.max(input_ids.eq(self.config.eos_token_id).sum(1))
 
-        hidden_states = outputs[0]  # last hidden state [B, L, D]
-        sentence_representation = torch.zeros((B, MAX_NUM, self.config.d_model)).to(device) # [B, MAX_NUM, D]
+        logits = torch.full((B, MAX_NUM), -1e9, dtype=torch.float).to(device) # [B, MAX_NUM]
         for i in range(B):
-            _hidden = hidden_states[i][input_ids[i].eq(self.config.eos_token_id)]
-            l = _hidden.size(0)
-            sentence_representation[i, 0:l] = _hidden
-        logits = self.classification_head(sentence_representation).squeeze(-1) # [B, MAX_NUM]
-        
+            _logit = all_logits[i][input_ids[i].eq(self.config.eos_token_id)]
+            l = _logit.size(0)
+            logits[i, 0:l] = _logit
+            
         loss = None
         if labels is not None:
             assert len(input_ids) == len(labels)
@@ -285,6 +286,12 @@ class BartSummaryModelV3(BartForConditionalGeneration):
             pooler_dropout=config.classifier_dropout,
         )
         self.classification_head.apply(init_weight)
+        self.loss_prediction = nn.Sequential(
+            nn.Linear(config.d_model, config.d_model),
+            nn.Dropout(),
+            nn.ReLU(),
+            nn.Linear(config.d_model, 1)
+        ) # for loss prediciton module
 
     def classify(
         self,
@@ -337,7 +344,6 @@ class BartSummaryModelV3(BartForConditionalGeneration):
         B = input_ids.size(0)
         MAX_NUM = torch.max(input_ids.eq(self.config.eos_token_id).sum(1))
 
-        # last hidden state
         logits = torch.full((B, MAX_NUM), -1e9, dtype=torch.float).to(device) # [B, MAX_NUM]
         for i in range(B):
             _logit = all_logits[i][input_ids[i].eq(self.config.eos_token_id)]
@@ -371,6 +377,11 @@ class BartSummaryModelV3(BartForConditionalGeneration):
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
         )
+
+    def loss_prediction_module(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        # hidden_states: [B, L, D]
+        out = self.loss_prediction(hidden_states) # [B, L, 1]
+        return out.squeeze(-1).mean(dim=1) # [B]
 
 
 class BartSummaryModelV4(BartForConditionalGeneration):
@@ -385,6 +396,12 @@ class BartSummaryModelV4(BartForConditionalGeneration):
 
         )
         # self.classification_head.apply(init_weight)
+        self.loss_prediction = nn.Sequential(
+            nn.Linear(config.d_model, config.d_model),
+            nn.Dropout(),
+            nn.ReLU(),
+            nn.Linear(config.d_model, 1)
+        ) # for loss prediciton module
 
     def classify(
         self,
@@ -470,7 +487,11 @@ class BartSummaryModelV4(BartForConditionalGeneration):
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
         )
-
+   
+    def loss_prediction_module(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        # hidden_states: [B, L, D]
+        out = self.loss_prediction(hidden_states) # [B, L, 1]
+        return out.squeeze(-1).mean(dim=1) # [B]
 
 class LSTMClassificationHead(nn.Module):
     def __init__(self, input_dim, inner_dim, num_classes, pooler_dropout, num_layers=1, bidirectional=False):
