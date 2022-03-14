@@ -102,8 +102,8 @@ def train_step(args, model, tokenizer, batch, device) -> Tuple[torch.FloatTensor
         if args.prediction_module.lower() == "lpm":
             target_out = gen_loss.clone().detach() # target of loss prediction module; [B]
         elif args.prediction_module.lower() == "rpm":
-            model.eval()  # dropout 비활성화 (어차피 generate()만 하는거라 안 해도 되나?)
-            with torch.no_grad():  # 트래킹 멈추기
+            model.eval()
+            with torch.no_grad():
                 top_ext_ids = get_top_k_sentences(
                     logits=logits.clone().detach().cpu(), 
                     eos_positions=batch["eos_positions"], 
@@ -115,7 +115,11 @@ def train_step(args, model, tokenizer, batch, device) -> Tuple[torch.FloatTensor
             target_out = compute_rouge_l(generated_ids.cpu().numpy(), labels.cpu().numpy(), REMOVE_IDS)["f1"]  # set Rouge-L F1 score as target output
             target_out = torch.from_numpy(target_out).to(device)  # target of rouge prediction module; [B]
         
-        pred_loss_fn = nn.MSELoss()
+        if args.pred_loss_function is not None and args.pred_loss_function.lower() == "l1":
+            pred_loss_fn = nn.L1Loss()
+        else:
+            pred_loss_fn = nn.MSELoss()
+
         pred_loss = pred_loss_fn(pred_out, target_out)
         total_loss += args.loss_beta * pred_loss
         metrics.update({"pred_loss": pred_loss.item()})
@@ -147,7 +151,8 @@ def train_loop(args, model, tokenizer, train_dl, eval_dl, optimizer, prev_step: 
             loss.backward()
             ext_losses.append(returned_dict["ext_loss"])
             gen_losses.append(returned_dict["gen_loss"])
-            pred_losses.append(returned_dict["pred_loss"])
+            if args.prediction_module is not None:
+                pred_losses.append(returned_dict["pred_loss"])
             all_logits.append(returned_dict["ext_logits"].detach().cpu().numpy().flatten())
             step += 1
 
@@ -312,9 +317,9 @@ def main(args):
     if args.use_wandb:
         import wandb
         wandb.init(
-            # project=args.wandb_project,
-            # entity=args.wandb_entity,
-            # name=args.wandb_run_name,
+        #     project=args.wandb_project,
+        #     entity=args.wandb_entity,
+        #     name=args.wandb_run_name,
         )
         wandb.config.update(args)
 

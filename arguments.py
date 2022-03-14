@@ -12,6 +12,7 @@ def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--eval_path", default="/opt/datasets/aihub_news_summ/Validation/valid.parquet", type=str, help="valid dataset path")
     parser.add_argument("--output_dir", default="./saved", type=str, help="path to save the trained model")
     parser.add_argument('--prediction_module', type=str, choices=["lpm", "rpm"])
+    parser.add_argument('--pred_loss_function', type=str, help="prediction module loss function type")
     
     parser.add_argument("--per_device_train_batch_size", default=4, type=int, help="train batch size per device (default: 4)")
     parser.add_argument("--per_device_eval_batch_size", default=8, type=int, help="eval batch size per device (default: 8)")
