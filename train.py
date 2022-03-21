@@ -98,7 +98,7 @@ def train_step(args, model, tokenizer, batch, device) -> Tuple[torch.FloatTensor
 
     # if using prediction module
     if args.prediction_module is not None:
-        pred_out = model.loss_prediction_module(ext_hidden_states) # [B]
+        pred_out = model.predict_module(ext_hidden_states) # [B]
         if args.prediction_module.lower() == "lpm":
             target_out = gen_loss.clone().detach() # target of loss prediction module; [B]
         elif args.prediction_module.lower() == "rpm":
@@ -278,7 +278,7 @@ def eval_loop(model, tokenizer, eval_dl, device) -> Dict[str, float]:
 
             # if using prediction module
             if args.prediction_module is not None:
-                pred_out = model.loss_prediction_module(ext_hidden_states) # [B]
+                pred_out = model.predict_module(ext_hidden_states) # [B]
                 if args.prediction_module.lower() == "lpm":
                     target_out = gen_loss_b.clone().detach() # target of loss prediction module; [B]
                 elif args.prediction_module.lower() == "rpm":
