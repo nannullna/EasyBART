@@ -82,6 +82,7 @@ def generate_summary(args, model, batch, device):
             min_length=args.min_length,
             repetition_penalty=args.repetition_penalty,
             no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
         )
     elif args.generate_method == "beam":
         summary_ids = model.generate(
@@ -92,6 +93,7 @@ def generate_summary(args, model, batch, device):
             min_length=args.min_length,
             repetition_penalty=args.repetition_penalty,
             no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
         )
     elif args.generate_method == "sampling":
         summary_ids = model.generate(
@@ -102,6 +104,7 @@ def generate_summary(args, model, batch, device):
             min_length=args.min_length,
             repetition_penalty=args.repetition_penalty,
             no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
             top_k=50,
             top_p=0.92,
         )
@@ -170,10 +173,12 @@ def main(args):
             architecture = json.load(f)["architectures"][0]
         model = getattr(models, architecture).from_pretrained(args.model)
         assert args.pretrained == False
+        print("Loaded a custom model.")
     except:
         # load from huggingface
         model = BartForConditionalGeneration.from_pretrained(args.model)
         assert args.pretrained == True
+        print("Loaded a pretrained model from Huggingface.")
     
     # get data
     OUTPUT_DIR = "./outputs/summary_outputs"

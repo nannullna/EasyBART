@@ -43,6 +43,8 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     parser.add_argument('--overwrite', action='store_true')
     parser.add_argument('--compute_metrics', action='store_true')
 
+    parser.add_argument('--length_penalty', type=float, default=1.0)
+
     parser.add_argument("--no_cuda", action='store_true', help="run on cpu if True")
     parser.add_argument("--per_device_eval_batch_size", default=8, type=int, help="inference batch size per device (default: 8)")
 
