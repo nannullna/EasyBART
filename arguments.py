@@ -43,8 +43,6 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     parser.add_argument('--overwrite', action='store_true')
     parser.add_argument('--compute_metrics', action='store_true')
 
-    parser.add_argument('--length_penalty', type=float, default=1.0)
-
     parser.add_argument("--no_cuda", action='store_true', help="run on cpu if True")
     parser.add_argument("--per_device_eval_batch_size", default=8, type=int, help="inference batch size per device (default: 8)")
 
@@ -52,13 +50,15 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
 
 def add_predict_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser():
-
+    
+    parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--generate_method', type=str, default="beam", choices=["greedy", "beam", "sampling"])
     parser.add_argument('--num_beams', type=int, default=8)
     parser.add_argument('--max_length', type=int, default=128)
     parser.add_argument('--min_length', type=int)
     parser.add_argument('--repetition_penalty', type=float, default=1.0)
     parser.add_argument('--no_repeat_ngram_size', type=int)
+    parser.add_argument('--length_penalty', type=float, default=1.0)
     parser.add_argument("--top_k", type=int, default = 3)
 
     return parser
