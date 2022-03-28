@@ -7,7 +7,7 @@ def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--do_eval", action='store_true')
     parser.add_argument("--do_predict", action='store_true')
     
-    parser.add_argument("--model_arch", default="BartSummaryModelV2", type=str, help="model architecture")
+    parser.add_argument("--model_arch", default="EasyBartLinear", type=str, help="model architecture")
     parser.add_argument("--train_path", default="/opt/datasets/aihub_news_summ/Train/train.parquet", type=str, help="train dataset path")
     parser.add_argument("--eval_path", default="/opt/datasets/aihub_news_summ/Validation/valid.parquet", type=str, help="valid dataset path")
     parser.add_argument("--output_dir", default="./saved", type=str, help="path to save the trained model")
@@ -36,7 +36,6 @@ def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser():
 
     parser.add_argument('--model', type=str, default="./saved")
-    parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--tokenizer', type=str, default="gogamza/kobart-summarization")
     parser.add_argument('--test_file_path', type=str, default="/opt/datasets/aihub_news_summ/Test/test.parquet")
     parser.add_argument('--save_json_name', type=str)
