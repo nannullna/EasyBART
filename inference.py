@@ -123,7 +123,7 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
 
     with torch.no_grad():
         for batch in tqdm(test_dl):
-            if not args.pretrained:
+            if args.extractive:
                 input_ids = batch["input_ids"].clone().to(device)  # (B, L_src)
                 attention_mask = batch["attention_mask"].clone().to(device)  # (B, L_src)
 
@@ -143,7 +143,7 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
             summary_sent = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in summary_ids]
             pred_sentences.extend(summary_sent)
 
-            if not args.pretrained:
+            if args.extractive:
                 # remove invalid ids for highlighting
                 top_ext_ids = top_ext_ids.tolist()
                 valid_ext_ids = []
@@ -172,12 +172,12 @@ def main(args):
         with open(os.path.join(args.model, "config.json"), "r") as f:
             architecture = json.load(f)["architectures"][0]
         model = getattr(models, architecture).from_pretrained(args.model)
-        assert args.pretrained == False
+        assert args.extractive == True
         print("Loaded a custom model.")
-    except:
+    except FileNotFoundError:
         # load from huggingface
         model = BartForConditionalGeneration.from_pretrained(args.model)
-        assert args.pretrained == True
+        assert args.extractive == False
         print("Loaded a pretrained model from Huggingface.")
     
     # get data
@@ -226,7 +226,7 @@ def main(args):
             "id": id,
             "title": test_title[i],
             "text": test_text[i],
-            "extract_ids": pred_ext_ids[i] if not args.pretrained else None,
+            "extract_ids": pred_ext_ids[i] if args.extractive else None,
             "summary": pred_sents[i]
         })
 
