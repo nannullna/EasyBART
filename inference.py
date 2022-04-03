@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from transformers import BartTokenizerFast, BartForConditionalGeneration
 
 from arguments import add_inference_args, add_predict_args
-from models import BartSummaryModelV2
+import models
 from dataset import SummaryDataset
 from utils import collate_fn, compute_metrics
 
@@ -71,6 +71,45 @@ def extract_sentences(
         "attention_mask": attention_mask,
     }
 
+def generate_summary(args, model, batch, device):
+
+    summary_ids = None
+    if args.generate_method == "greedy":
+        summary_ids = model.generate(
+            input_ids=batch["input_ids"].to(device), 
+            attention_mask=batch["attention_mask"].to(device),  
+            max_length=args.max_length, 
+            min_length=args.min_length,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
+        )
+    elif args.generate_method == "beam":
+        summary_ids = model.generate(
+            input_ids=batch["input_ids"].to(device), 
+            attention_mask=batch["attention_mask"].to(device), 
+            num_beams=args.num_beams, 
+            max_length=args.max_length, 
+            min_length=args.min_length,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
+        )
+    elif args.generate_method == "sampling":
+        summary_ids = model.generate(
+            input_ids=batch["input_ids"].to(device), 
+            attention_mask=batch["attention_mask"].to(device), 
+            do_sample=True,
+            max_length=args.max_length, 
+            min_length=args.min_length,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
+            top_k=50,
+            top_p=0.92,
+        )
+
+    return summary_ids
 
 def predict(args, model, test_dl, tokenizer) -> List[str]:
 
@@ -84,7 +123,7 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
 
     with torch.no_grad():
         for batch in tqdm(test_dl):
-            if not args.pretrained:
+            if args.extractive:
                 input_ids = batch["input_ids"].clone().to(device)  # (B, L_src)
                 attention_mask = batch["attention_mask"].clone().to(device)  # (B, L_src)
 
@@ -99,43 +138,12 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
                 )
                 batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
 
-            summary_ids = None
-            if args.generate_method == "greedy":
-                summary_ids = model.generate(
-                    input_ids=batch["input_ids"].to(device), 
-                    attention_mask=batch["attention_mask"].to(device),  
-                    max_length=args.max_length, 
-                    min_length=args.min_length,
-                    repetition_penalty=args.repetition_penalty,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size,
-                )
-            elif args.generate_method == "beam":
-                summary_ids = model.generate(
-                    input_ids=batch["input_ids"].to(device), 
-                    attention_mask=batch["attention_mask"].to(device), 
-                    num_beams=args.num_beams, 
-                    max_length=args.max_length, 
-                    min_length=args.min_length,
-                    repetition_penalty=args.repetition_penalty,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size,
-                )
-            elif args.generate_method == "sampling":
-                summary_ids = model.generate(
-                    input_ids=batch["input_ids"].to(device), 
-                    attention_mask=batch["attention_mask"].to(device), 
-                    do_sample=True,
-                    max_length=args.max_length, 
-                    min_length=args.min_length,
-                    repetition_penalty=args.repetition_penalty,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size,
-                    top_k=50,
-                    top_p=0.92,
-                )
-            
+            summary_ids = generate_summary(args, model, batch, device)
+        
             summary_sent = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in summary_ids]
             pred_sentences.extend(summary_sent)
 
-            if not args.pretrained:
+            if args.extractive:
                 # remove invalid ids for highlighting
                 top_ext_ids = top_ext_ids.tolist()
                 valid_ext_ids = []
@@ -159,13 +167,21 @@ def _get_ref_sentences(reference_file):
 def main(args):
     # tokenizer, model
     tokenizer = BartTokenizerFast.from_pretrained(args.tokenizer)
-    if args.pretrained:
+    try:
+        # load saved model
+        with open(os.path.join(args.model, "config.json"), "r") as f:
+            architecture = json.load(f)["architectures"][0]
+        model = getattr(models, architecture).from_pretrained(args.model)
+        assert args.extractive == True
+        print("Loaded a custom model.")
+    except FileNotFoundError:
+        # load from huggingface
         model = BartForConditionalGeneration.from_pretrained(args.model)
-    else:
-        model = BartSummaryModelV2.from_pretrained(args.model)
+        assert args.extractive == False
+        print("Loaded a pretrained model from Huggingface.")
     
     # get data
-    OUTPUT_DIR = "./outputs"
+    OUTPUT_DIR = "./outputs/summary_outputs"
     save_file_name = "summary_output.json"
 
     if args.save_json_name is not None:
@@ -195,7 +211,7 @@ def main(args):
     
     assert len(test_id) == len(pred_sents), "lengths of test_id and pred_sents do not match"
     
-    if compute_metrics is not None:
+    if args.compute_metrics:
         ref_sents = _get_ref_sentences(args.test_file_path)
         print("="*30)
         print("Rouge Scores:\n", compute_metrics(pred_sents, ref_sents))
@@ -210,7 +226,7 @@ def main(args):
             "id": id,
             "title": test_title[i],
             "text": test_text[i],
-            "extract_ids": pred_ext_ids[i] if not args.pretrained else None,
+            "extract_ids": pred_ext_ids[i] if args.extractive else None,
             "summary": pred_sents[i]
         })
 

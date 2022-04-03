@@ -668,9 +668,26 @@ class RougeScorer:
         self.save_rouge_scores(str_scores)
         return scores if return_dict else str_scores
 
+    def increment_path(self, path, overwrite=False):
+        if overwrite:
+            return path
+        else:
+            i = 0
+            file_name = os.path.splitext(path)[0]
+            file_ext = os.path.splitext(path)[1]
+            while os.path.exists(f"{file_name}_{i}{file_ext}"):
+                i += 1
+            return f"{file_name}_{i}{file_ext}"
+
     def save_rouge_scores(self, str_scores):
-        with open("rouge_scores.txt", "w") as output:
+        SAVE_DIR = "./outputs/rouge_outputs"
+        if not os.path.isdir(SAVE_DIR):
+            os.makedirs(SAVE_DIR)
+        
+        save_path = os.path.join(SAVE_DIR, "rouge_scores.txt")
+        with open(self.increment_path(save_path), "w") as output:
             output.write(str_scores)
+        print(f"Rouge metric scores saved in {save_path}")
 
     def format_rouge_scores(self, scores):
         return """\n

@@ -6,3 +6,6 @@ pandas
 torch
 transformers>=4.6.0
 wandb
+
+# metric
+konlpy
