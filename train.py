@@ -93,8 +93,13 @@ def train_step(args, model, tokenizer, batch, device) -> Tuple[torch.FloatTensor
     gen_loss = gen_loss.view(B, -1) # [B, L]
     gen_loss = gen_loss.mean(dim=1) # [B]
 
-    total_loss = args.loss_alpha * ext_loss + (1-args.loss_alpha) * gen_loss.mean()
-    metrics = {"ext_loss": ext_loss.item(), "gen_loss": gen_loss.mean().item(), "ext_logits": logits}
+    
+    if args.freeze_backbone:
+        total_loss = ext_loss
+        metrics = {"ext_loss": ext_loss.item(), "ext_logits": logits}
+    else:
+        total_loss = args.loss_alpha * ext_loss + (1-args.loss_alpha) * gen_loss.mean()
+        metrics = {"ext_loss": ext_loss.item(), "gen_loss": gen_loss.mean().item(), "ext_logits": logits}
 
     # if using prediction module
     if args.prediction_module is not None:
@@ -150,7 +155,8 @@ def train_loop(args, model, tokenizer, train_dl, eval_dl, optimizer, prev_step: 
             loss, returned_dict = train_step(args, model, tokenizer, batch, device)
             loss.backward()
             ext_losses.append(returned_dict["ext_loss"])
-            gen_losses.append(returned_dict["gen_loss"])
+            if not args.freeze_backbone:
+                gen_losses.append(returned_dict["gen_loss"])
             if args.prediction_module is not None:
                 pred_losses.append(returned_dict["pred_loss"])
             all_logits.append(returned_dict["ext_logits"].detach().cpu().numpy().flatten())
@@ -306,7 +312,7 @@ def eval_loop(model, tokenizer, eval_dl, device) -> Dict[str, float]:
 
     return {
         "ext_loss": ext_loss,
-        "gen_loss": gen_loss,
+        "gen_loss": gen_loss if not args.freeze_backbone else None,
         "pred_loss": pred_loss if args.prediction_module else None,
         "probs": wandb.Histogram(np_histogram=hist) if args.use_wandb else None,
     }
@@ -332,6 +338,12 @@ def main(args):
     config = BartConfig.from_pretrained(MODEL_NAME)
     tokenizer = BartTokenizerFast.from_pretrained(MODEL_NAME)
     model = getattr(models, args.model_arch).from_pretrained(MODEL_NAME)
+
+    # freeze backbone
+    if args.freeze_backbone:
+        print("== Frozen Layers =================================================")
+        print(freeze(model, ["model", "lm_head"], exact=False))
+        print("====================================================================")
 
     wandb.watch(model, log='all', log_freq=500)  
 
