@@ -664,8 +664,14 @@ class RougeScorer:
     def compute_rouge(self, ref_summaries, hyp_summaries, return_dict=True):
         self.generated_summaries, self.reference_summaries = hyp_summaries, ref_summaries
         scores = self.rouge_evaluator.get_scores(self.generated_summaries, self.reference_summaries)
-        str_scores = self.format_rouge_scores(scores)
-        self.save_rouge_scores(str_scores)
+        
+        if self.rouge_evaluator.apply_avg or self.rouge_evaluator.apply_best:
+            str_scores = self.format_rouge_scores(scores)
+            self.save_rouge_scores(str_scores)
+        else:
+            str_scores = ""
+            scores = self.save_all_rouge_scores(scores)
+            
         return scores if return_dict else str_scores
 
     def increment_path(self, path, overwrite=False):
@@ -688,6 +694,23 @@ class RougeScorer:
         with open(self.increment_path(save_path), "w") as output:
             output.write(str_scores)
         print(f"Rouge metric scores saved in {save_path}")
+
+
+    def save_all_rouge_scores(self, scores: dict):
+        SAVE_DIR = "./outputs/rouge_outputs"
+        if not os.path.isdir(SAVE_DIR):
+            os.makedirs(SAVE_DIR)
+        save_path = os.path.join(SAVE_DIR, "rouge_scores.csv")
+        save_path = self.increment_path(save_path)
+
+        df = pd.DataFrame()
+        for stat in self.rouge_evaluator.metrics:
+            column_name = stat + "-f1"
+            df[column_name] = [scores[stat][i]["f1"][0] for i in range(len(scores[stat]))]
+        df.to_csv(save_path)
+
+        print(f"Rouge metric scores saved in {save_path}")
+
 
     def format_rouge_scores(self, scores):
         return """\n
