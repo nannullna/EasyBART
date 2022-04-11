@@ -214,7 +214,7 @@ def main(args):
     if args.compute_metrics:
         ref_sents = _get_ref_sentences(args.test_file_path)
         print("="*30)
-        print("Rouge Scores:\n", compute_metrics(pred_sents, ref_sents))
+        print("Rouge Scores:\n", compute_metrics(pred_sents, ref_sents, args.apply_none))
         print("="*30)
 
     test_title = test_dataset.get_title_column()

@@ -13,6 +13,7 @@ def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--output_dir", default="./saved", type=str, help="path to save the trained model")
     parser.add_argument('--prediction_module', type=str, choices=["lpm", "rpm"])
     parser.add_argument('--pred_loss_function', type=str, help="prediction module loss function type")
+    parser.add_argument('--freeze_backbone', action='store_true', help="freeze backbone layer")
     
     parser.add_argument("--per_device_train_batch_size", default=4, type=int, help="train batch size per device (default: 4)")
     parser.add_argument("--per_device_eval_batch_size", default=8, type=int, help="eval batch size per device (default: 8)")
@@ -41,6 +42,7 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     parser.add_argument('--save_json_name', type=str)
     parser.add_argument('--overwrite', action='store_true')
     parser.add_argument('--compute_metrics', action='store_true')
+    parser.add_argument('--apply_none', action='store_true')
 
     parser.add_argument("--no_cuda", action='store_true', help="run on cpu if True")
     parser.add_argument("--per_device_eval_batch_size", default=8, type=int, help="inference batch size per device (default: 8)")
