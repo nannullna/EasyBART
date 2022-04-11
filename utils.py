@@ -141,8 +141,11 @@ def unfreeze_all(model: nn.Module) -> NoReturn:
     for p in model.parameters():
         p.requires_grad = True
         
-def compute_metrics(pred_sentences, ref_sentences):
+def compute_metrics(pred_sentences, ref_sentences, apply_none=False):
     rouge = RougeScorer()
+    if apply_none:
+        rouge.rouge_evaluator.apply_avg = False
+        rouge.rouge_evaluator.apply_best = False
     scores = rouge.compute_rouge(ref_sentences, pred_sentences)
     return scores
 
