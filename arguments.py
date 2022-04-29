@@ -53,6 +53,7 @@ def add_inference_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 def add_predict_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser():
     
     parser.add_argument('--extractive', action='store_true')
+    parser.add_argument('--classify_method', type=str, default="simple", choices=["simple", "recursive"])
     parser.add_argument('--generate_method', type=str, default="beam", choices=["greedy", "beam", "sampling"])
     parser.add_argument('--num_beams', type=int, default=8)
     parser.add_argument('--max_length', type=int, default=128)

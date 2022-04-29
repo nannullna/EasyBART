@@ -14,7 +14,8 @@ from transformers import BartTokenizerFast, BartForConditionalGeneration
 from arguments import add_inference_args, add_predict_args
 import models
 from dataset import SummaryDataset
-from utils import collate_fn, compute_metrics
+from utils import collate_fn, compute_metrics, get_eos_positions
+from truncate import batch_truncate_with_eq, gather_lengths, concat_sentences
 
 from tqdm import tqdm
 
@@ -111,6 +112,68 @@ def generate_summary(args, model, batch, device):
 
     return summary_ids
 
+def simple_extraction(args, model, batch, tokenizer, device):
+    input_ids = batch["input_ids"].clone().to(device)  # (B, L_src)
+    attention_mask = batch["attention_mask"].clone().to(device)  # (B, L_src)
+
+    ext_out = model.classify(input_ids=input_ids, attention_mask=attention_mask)
+
+    top_ext_ids = get_top_k_sentences(
+        logits=ext_out.logits.clone().detach().cpu(), 
+        eos_positions=batch["eos_positions"], 
+        k = args.top_k,
+    )
+    gen_batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
+
+    return gen_batch, top_ext_ids
+
+def recursive_extraction(args, model, batch, tokenizer, device):
+
+    input_ids = batch["input_ids"]
+
+    while input_ids.size(1) > 0:
+
+        _input_ids, input_ids = batch_truncate_with_eq(
+            input_ids, 
+            model.config.max_position_embeddings - model.config.extra_pos_embeddings, 
+            sep=tokenizer.eos_token_id, 
+            padding_value=tokenizer.pad_token_id, 
+            eos_value=tokenizer.eos_token_id, 
+            return_mapping=False,
+            overflow=False,
+        )
+
+        lengths = gather_lengths(_input_ids, tokenizer.pad_token_id)
+
+        _attention_mask = torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor([1.0] * l) for l in lengths], 
+            batch_first=True, 
+            padding_value=0.0
+        )
+
+        _input_ids_c = _input_ids.to(device)
+        _attention_mask_c = _attention_mask.to(device)
+
+        ext_out = model.classify(
+            input_ids=_input_ids_c, 
+            attention_mask=_attention_mask_c,
+        )
+
+        _eos_positions = get_eos_positions(_input_ids, tokenizer)
+        
+        top_ext_ids = get_top_k_sentences(
+            logits=ext_out.logits.clone().detach().cpu(),
+            eos_positions=_eos_positions,
+            k=args.top_k,
+        )
+        _ext_batch = extract_sentences(_input_ids, _eos_positions, top_ext_ids, tokenizer)
+        
+        if input_ids.size(1) > 0:
+            input_ids = concat_sentences(_ext_batch["input_ids"], input_ids, tokenizer.pad_token_id)
+            continue
+        else:
+            return _ext_batch, top_ext_ids
+
 def predict(args, model, test_dl, tokenizer) -> List[str]:
 
     device = torch.device("cpu") if args.no_cuda or not torch.cuda.is_available() else torch.device("cuda")
@@ -124,19 +187,10 @@ def predict(args, model, test_dl, tokenizer) -> List[str]:
     with torch.no_grad():
         for batch in tqdm(test_dl):
             if args.extractive:
-                input_ids = batch["input_ids"].clone().to(device)  # (B, L_src)
-                attention_mask = batch["attention_mask"].clone().to(device)  # (B, L_src)
-
-                ext_out = model.classify(input_ids=input_ids, attention_mask=attention_mask)
-
-                # TODO: use different k values
-                # TODO: implement different criteria (such as probability)!
-                top_ext_ids = get_top_k_sentences(
-                    logits=ext_out.logits.clone().detach().cpu(), 
-                    eos_positions=batch["eos_positions"], 
-                    k = args.top_k,
-                )
-                batch = extract_sentences(batch["input_ids"], batch["eos_positions"], top_ext_ids, tokenizer)
+                if args.classify_method == "simple":
+                    batch, top_ext_ids = simple_extraction(args, model, batch, tokenizer, device)
+                elif args.classify_method == "recursive":
+                    batch, top_ext_ids = recursive_extraction(args, model, batch, tokenizer, device)
 
             summary_ids = generate_summary(args, model, batch, device)
         
@@ -192,7 +246,11 @@ def main(args):
         print(f'{save_file_name} has already been generated.')
         return
 
-    test_dataset = SummaryDataset(args.test_file_path, tokenizer)
+    test_dataset = SummaryDataset(
+        args.test_file_path,
+        tokenizer,
+        truncate = True if args.classify_method == "simple" else False
+    )
 
     print(f"test dataset length: {len(test_dataset)}")
     

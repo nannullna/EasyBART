@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 
+from transformers import BartTokenizerFast
+
 from metrics import RougeScorer
 
 
@@ -240,3 +242,11 @@ class PrintInfo:
         diff = self.time_step - temp
         self.accumulation += diff
         return diff * 1000
+
+
+def get_eos_positions(x: torch.Tensor, tokenizer: BartTokenizerFast):
+    eos_positions = []
+    for i in range(x.size(0)):
+        ids = torch.eq(x[i], tokenizer.eos_token_id).nonzero().squeeze(1)
+        eos_positions.append(ids)
+    return torch.nn.utils.rnn.pad_sequence(eos_positions, batch_first=True, padding_value=-1)

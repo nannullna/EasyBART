@@ -726,16 +726,30 @@ class RougeScorer:
     ** ROUGE L
     F1        >> {:.3f}
     Precision >> {:.3f}
-    Recall    >> {:.3f}""".format(
-            scores["rouge-1"]["f1"],
-            scores["rouge-1"]["precision"],
-            scores["rouge-1"]["recall"],
-            scores["rouge-2"]["f1"],
-            scores["rouge-2"]["precision"],
-            scores["rouge-2"]["recall"],
-            scores["rouge-l"]["f1"],
-            scores["rouge-l"]["precision"],
-            scores["rouge-l"]["recall"],
+    Recall    >> {:.3f}
+    
+    F1: {:.3f} / {:.3f} / {:.3f}
+    Precision: {:.3f} / {:.3f} / {:.3f}
+    Recall: {:.3f} / {:.3f} / {:.3f}""".format(
+            scores["rouge-1"]["f1"] * 100,
+            scores["rouge-1"]["precision"] * 100,
+            scores["rouge-1"]["recall"] * 100,
+            scores["rouge-2"]["f1"] * 100,
+            scores["rouge-2"]["precision"] * 100,
+            scores["rouge-2"]["recall"] * 100,
+            scores["rouge-l"]["f1"] * 100,
+            scores["rouge-l"]["precision"] * 100,
+            scores["rouge-l"]["recall"] * 100,
+            scores["rouge-1"]["f1"] * 100,
+            scores["rouge-2"]["f1"] * 100,
+            scores["rouge-l"]["f1"] * 100,
+            scores["rouge-1"]["precision"] * 100,
+            scores["rouge-2"]["precision"] * 100,
+            scores["rouge-l"]["precision"] * 100,
+            scores["rouge-1"]["recall"] * 100,
+            scores["rouge-2"]["recall"] * 100,
+            scores["rouge-l"]["recall"] * 100,
+
         )
 
     def _concat_extracted_sentences(self, text, extract_ids):
